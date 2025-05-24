@@ -1,14 +1,11 @@
-import concurrent
+from concurrent.futures import ProcessPoolExecutor
 import time
 from hashlib import sha256
 
+CPU_COUNT = 4
 MIN_VALUE = 0
-# MIN_VALUE = 71100000
-# MAX_VALUE = 100000000
-# MAX_VALUE = 72000000
-STEP = 3 ** 7
-# MAX_VALUE = STEP * 10000
 MAX_VALUE = 100000000
+STEP = max(1000, (MAX_VALUE - MIN_VALUE) // (CPU_COUNT * 4))
 
 PASSWORDS_TO_BRUTE_FORCE = [
     "b4061a4bcfe1a2cbf78286f3fab2fb578266d1bd16c414c650c5ac04dfc696e1",
@@ -24,32 +21,35 @@ PASSWORDS_TO_BRUTE_FORCE = [
 ]
 
 
+def streight(number: int) -> str:
+    result = "00000000" + str(number)
+    return result[-8:]
+
+
 def sha256_hash_str(to_hash: str) -> str:
     return sha256(to_hash.encode("utf-8")).hexdigest()
 
 
-def create_password_str(password_int: int) -> str:
-    return f"{password_int: 08d}"
+def check_block(start: int, end: int) -> list[str]:
+    result = []
+    for number in range(start, end):
+        number_str = streight(number)
+        hashed = sha256_hash_str(number_str)
+        if hashed in PASSWORDS_TO_BRUTE_FORCE:
+            result.append(number_str)
+    return result
 
 
-def check_password(password_str: str) -> str:
-    to_hash = sha256_hash_str(password_str)
-    if to_hash in PASSWORDS_TO_BRUTE_FORCE:
-        return password_str
-    return None
-
-
-def brute_force_password() -> None:
+def brute_force_password() -> list[str]:
     results = []
-    with concurrent.futures.ThreadPoolExecutor():
-        for start_point in range(MIN_VALUE, MAX_VALUE, STEP):
-            for shifter in range(STEP):
-                result = check_password(
-                    create_password_str(start_point + shifter))
-                if result:
-                    results.append(result)
-                if len(results) >= len(PASSWORDS_TO_BRUTE_FORCE):
-                    return results
+    with ProcessPoolExecutor() as executor:
+        futures = []
+        for start in range(MIN_VALUE, MAX_VALUE, STEP):
+            end = min(start + STEP, MAX_VALUE)
+            futures.append(executor.submit(check_block, start, end))
+        for ftr in futures:
+            results.extend(ftr.result())
+    return results
 
 
 if __name__ == "__main__":
@@ -57,5 +57,6 @@ if __name__ == "__main__":
     result = brute_force_password()
     end_time = time.perf_counter()
 
+    print("CPU Count:", CPU_COUNT)
     print("Elapsed:", end_time - start_time)
-    print("Result:", result)
+    print("Results:", result)
